@@ -1,0 +1,11 @@
+.venv/
+.env
+web/node_modules/
+web/dist/
+web/.vite/
+__pycache__/
+*.pyc
+data/
+*.sqlite*
+*.log
+.pytest_cache/
