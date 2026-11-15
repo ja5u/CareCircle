@@ -21,7 +21,13 @@ def stamp(value=None):
 
 
 def connect():
-    path = Path(os.getenv("DATABASE_PATH", str(ROOT / "data" / "carecircle.sqlite3")))
+    database_path = os.getenv("DATABASE_PATH")
+    if database_path:
+        path = Path(database_path)
+    elif os.getenv("VERCEL") == "1":
+        path = Path("/tmp/carecircle.sqlite3")
+    else:
+        path = ROOT / "data" / "carecircle.sqlite3"
     if not path.is_absolute():
         path = ROOT / path
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -77,6 +77,11 @@ class CareWorkflowTests(unittest.TestCase):
         response = self.client.post(self.path + "/assistant", headers=self.helper, json={"text": "I took Sample A"})
         self.assertEqual(response.status_code, 403)
 
+    def test_vercel_api_prefix_reaches_fastapi_routes(self):
+        response = self.client.get("/api/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ok"})
+
     def test_invitation_single_use_and_revocation(self):
         helper_id, invitation = self.add_member()
         self.assertEqual(self.client.post("/invitations/join", headers=self.outsider, json={"code": invitation}).status_code, 400)

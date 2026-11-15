@@ -22,6 +22,19 @@ async def lifespan(app):
 app = FastAPI(title="CareCircle API", version="1.0.0", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def strip_api_prefix(request: Request, call_next):
+    path = request.scope["path"]
+    if path == "/api" or path.startswith("/api/"):
+        request.scope["path"] = path[4:] or "/"
+        raw_path = request.scope.get("raw_path", b"")
+        if raw_path == b"/api":
+            request.scope["raw_path"] = b"/"
+        elif raw_path.startswith(b"/api/"):
+            request.scope["raw_path"] = raw_path[4:]
+    return await call_next(request)
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}

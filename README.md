@@ -27,6 +27,14 @@ Ports are configurable with `API_HOST`, `API_PORT`, `FRONTEND_HOST`, and `FRONTE
 
 Before using a Groq credential, configure your own key in a local `.env`; do not commit credentials. Demo `.test` addresses cannot receive real email. Do not use the fictional demo accounts in a deployed environment.
 
+## Deploy on Vercel (demo only)
+
+The root `vercel.json` defines two Vercel services: `app` runs the FastAPI backend and `web` builds the Vite frontend. Requests under `/api/*` are routed to `app`; other public paths are routed to `web`. The backend strips the `/api` prefix so the existing FastAPI routes continue to work. No service binding is needed: the browser calls the public `/api` path, and the backend calls Groq directly.
+
+Add `GROQ_API_KEY` in the Vercel project's environment variables if voice transcription and spoken replies are needed. Do not add a `VITE_` prefix. Vercel's `VERCEL=1` environment selects `/tmp/carecircle.sqlite3` when `DATABASE_PATH` is unset, so the demo can initialize without writing into the deployment package.
+
+**This is not suitable for real care data.** Vercel's `/tmp` database is temporary and isolated to a function instance; records and sessions are not reliably shared or durable. The continuous reminder worker started by `run.py` is not deployed, so automatic email reminders are unavailable. A production deployment needs a managed persistent database and scheduled reminder processing before storing real healthcare information.
+
 ## 1. Product purpose
 
 CareCircle helps an older adult understand their daily care schedule, record medication activity, and request support through a shared care profile. Family members and caretakers can help maintain that profile and coordinate follow-up with the older adult's permission.
