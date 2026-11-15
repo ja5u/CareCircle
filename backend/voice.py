@@ -3,13 +3,13 @@ import json
 import os
 import re
 import secrets
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 
-from .care import materialize, request_checkin, update_dose
+from .care import local_day_utc_bounds, materialize, request_checkin, update_dose
 from .db import stamp, transaction, utcnow
 from .schemas import AssistantInput, AssistantIntent, SpeechInput
 from .security import authorize, current_user
@@ -112,12 +112,10 @@ def assistant(profile_id: int, data: AssistantInput, user=Depends(current_user))
         profile = db.execute("SELECT * FROM profiles WHERE id=?", (profile_id,)).fetchone()
         zone = ZoneInfo(profile["timezone"])
         now = utcnow()
-        today = now.astimezone(zone).date()
-        day_start = datetime.combine(today, time.min, zone)
-        next_day_start = datetime.combine(today + timedelta(days=1), time.min, zone)
+        day_start, next_day_start = local_day_utc_bounds(now, zone)
         candidates = [dict(r) for r in db.execute(
             "SELECT * FROM doses WHERE profile_id=? AND status='pending' AND due_at>=? AND due_at<? ORDER BY due_at",
-            (profile_id, stamp(day_start.astimezone(timezone.utc)), stamp(next_day_start.astimezone(timezone.utc))),
+            (profile_id, stamp(day_start), stamp(next_day_start)),
         )]
         if intent.intent == "cancel":
             db.execute("DELETE FROM confirmations WHERE session_hash=? AND profile_id=? AND completed_at IS NULL", (user["session_hash"], profile_id))

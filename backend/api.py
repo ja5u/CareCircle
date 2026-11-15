@@ -2,13 +2,13 @@ import json
 import secrets
 import sqlite3
 from contextlib import asynccontextmanager
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 
 from . import schemas
-from .care import materialize, request_checkin, update_dose
+from .care import local_day_utc_bounds, materialize, request_checkin, update_dose
 from .db import audit, connect, initialize, stamp, transaction, utcnow
 from .security import authorize, current_user, digest, hash_passcode, issue_session, verify_passcode
 
@@ -182,11 +182,11 @@ def dashboard(profile_id: int, user=Depends(current_user)):
         now = utcnow()
         zone = ZoneInfo(profile["timezone"])
         today = now.astimezone(zone).date()
-        next_day_start = datetime.combine(today + timedelta(days=1), time.min, zone)
+        _, next_day_start = local_day_utc_bounds(now, zone)
         rows = db.execute(
             "SELECT * FROM doses WHERE profile_id=? AND status IN ('pending','taken','skipped') "
             "AND due_at>=? AND due_at<? ORDER BY due_at",
-            (profile_id, stamp(now - timedelta(days=7)), stamp(next_day_start.astimezone(timezone.utc))),
+            (profile_id, stamp(now - timedelta(days=7)), stamp(next_day_start)),
         ).fetchall()
         doses = [dict(r) for r in rows]
         today_doses = [r for r in doses if datetime.fromisoformat(r["due_at"]).astimezone(zone).date() == today]

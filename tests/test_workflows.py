@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 from fastapi.testclient import TestClient
 
 from backend.api import app
+from backend.care import local_day_utc_bounds
 from backend.db import connect, stamp, transaction, utcnow
 from backend.reminders import dispatch, prepare
 
@@ -67,6 +68,14 @@ class CareWorkflowTests(unittest.TestCase):
             return [dict(r) for r in db.execute(sql, parameters).fetchall()]
         finally:
             db.close()
+
+    def test_local_day_utc_bounds_cover_dst_days(self):
+        zone = ZoneInfo("America/New_York")
+        spring_start, spring_end = local_day_utc_bounds(datetime(2026, 3, 8, 12, tzinfo=zone), zone)
+        fall_start, fall_end = local_day_utc_bounds(datetime(2026, 11, 1, 12, tzinfo=zone), zone)
+
+        self.assertEqual(spring_end - spring_start, timedelta(hours=23))
+        self.assertEqual(fall_end - fall_start, timedelta(hours=25))
 
     def test_profile_isolation_and_viewer_write_denial(self):
         self.assertEqual(self.client.get(self.path + "/dashboard", headers=self.outsider).status_code, 404)

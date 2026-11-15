@@ -8,6 +8,13 @@ from fastapi import HTTPException
 from .db import audit, stamp, utcnow
 
 
+def local_day_utc_bounds(now, zone):
+    day = now.astimezone(zone).date()
+    start = datetime.combine(day, time.min, zone).astimezone(timezone.utc)
+    end = datetime.combine(day + timedelta(days=1), time.min, zone).astimezone(timezone.utc)
+    return start, end
+
+
 def materialize(db, profile_id, now=None):
     now = now or utcnow()
     profile = db.execute("SELECT * FROM profiles WHERE id=?", (profile_id,)).fetchone()
