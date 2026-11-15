@@ -2,7 +2,7 @@ import json
 import secrets
 import sqlite3
 from contextlib import asynccontextmanager
-from datetime import timedelta
+from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -180,12 +180,16 @@ def dashboard(profile_id: int, user=Depends(current_user)):
         materialize(db, profile_id)
         profile = dict(db.execute("SELECT * FROM profiles WHERE id=?", (profile_id,)).fetchone())
         now = utcnow()
-        today = now.astimezone(ZoneInfo(profile["timezone"])).date()
-        rows = db.execute("SELECT * FROM doses WHERE profile_id=? AND status!='cancelled' AND due_at>=? ORDER BY due_at",
-                          (profile_id, stamp(now - timedelta(days=7)))).fetchall()
-        from datetime import datetime
-        doses = [dict(r) for r in rows if datetime.fromisoformat(r["due_at"]).astimezone(ZoneInfo(profile["timezone"])).date() <= today]
-        today_doses = [r for r in doses if datetime.fromisoformat(r["due_at"]).astimezone(ZoneInfo(profile["timezone"])).date() == today]
+        zone = ZoneInfo(profile["timezone"])
+        today = now.astimezone(zone).date()
+        next_day_start = datetime.combine(today + timedelta(days=1), time.min, zone)
+        rows = db.execute(
+            "SELECT * FROM doses WHERE profile_id=? AND status IN ('pending','taken','skipped') "
+            "AND due_at>=? AND due_at<? ORDER BY due_at",
+            (profile_id, stamp(now - timedelta(days=7)), stamp(next_day_start.astimezone(timezone.utc))),
+        ).fetchall()
+        doses = [dict(r) for r in rows]
+        today_doses = [r for r in doses if datetime.fromisoformat(r["due_at"]).astimezone(zone).date() == today]
         appointments = [dict(r) for r in db.execute("SELECT * FROM appointments WHERE profile_id=? AND cancelled=0 AND scheduled_at>=? ORDER BY scheduled_at LIMIT 20",
                                                    (profile_id, stamp(now)))]
         followups = [dict(r) for r in db.execute("SELECT f.*,a.name AS claimed_name FROM followups f LEFT JOIN accounts a ON a.id=f.claimed_by "

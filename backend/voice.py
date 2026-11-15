@@ -3,7 +3,7 @@ import json
 import os
 import re
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -111,9 +111,14 @@ def assistant(profile_id: int, data: AssistantInput, user=Depends(current_user))
         materialize(db, profile_id)
         profile = db.execute("SELECT * FROM profiles WHERE id=?", (profile_id,)).fetchone()
         zone = ZoneInfo(profile["timezone"])
-        today = utcnow().astimezone(zone).date()
-        candidates = [dict(r) for r in db.execute("SELECT * FROM doses WHERE profile_id=? AND status='pending' ORDER BY due_at", (profile_id,))
-                      if datetime.fromisoformat(r["due_at"]).astimezone(zone).date() == today]
+        now = utcnow()
+        today = now.astimezone(zone).date()
+        day_start = datetime.combine(today, time.min, zone)
+        next_day_start = datetime.combine(today + timedelta(days=1), time.min, zone)
+        candidates = [dict(r) for r in db.execute(
+            "SELECT * FROM doses WHERE profile_id=? AND status='pending' AND due_at>=? AND due_at<? ORDER BY due_at",
+            (profile_id, stamp(day_start.astimezone(timezone.utc)), stamp(next_day_start.astimezone(timezone.utc))),
+        )]
         if intent.intent == "cancel":
             db.execute("DELETE FROM confirmations WHERE session_hash=? AND profile_id=? AND completed_at IS NULL", (user["session_hash"], profile_id))
             return {"message": "The pending action has been cancelled."}

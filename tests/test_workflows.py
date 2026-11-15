@@ -3,8 +3,9 @@ import json
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import datetime, time as datetime_time, timedelta, timezone
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
 
@@ -202,6 +203,68 @@ class CareWorkflowTests(unittest.TestCase):
         self.dose(0)
         result = self.client.post(self.path + "/assistant", headers=self.owner, json={"text": "I took my medicine"}).json()
         self.assertNotIn("confirmation_id", result)
+
+    def test_assistant_limits_doses_to_the_profiles_local_day(self):
+        zone = ZoneInfo("Pacific/Kiritimati")
+        now = utcnow()
+        today = now.astimezone(zone).date()
+        day_start = datetime.combine(today, datetime_time.min, zone).astimezone(timezone.utc)
+        yesterday_due = stamp(day_start - timedelta(seconds=1))
+        today_due = stamp(day_start + timedelta(hours=2))
+        with transaction() as db:
+            db.execute("UPDATE profiles SET timezone=? WHERE id=?", (str(zone), self.profile))
+            for name, due_at in (("Yesterday medicine", yesterday_due), ("Today medicine", today_due)):
+                medication_id = db.execute(
+                    "INSERT INTO medications(profile_id,name,dose,instructions,times,start_date,active,effective_at) "
+                    "VALUES(?,?,?,?,?,?,0,?)",
+                    (self.profile, name, "one", "", "[]", str(today), stamp(now)),
+                ).lastrowid
+                db.execute(
+                    "INSERT INTO doses(profile_id,medication_id,revision,name,dose,instructions,due_at) "
+                    "VALUES(?,?,1,?,?,?,?)",
+                    (self.profile, medication_id, name, "one", "", due_at),
+                )
+
+        response = self.client.post(
+            self.path + "/assistant",
+            headers=self.owner,
+            json={"text": "What is due today?"},
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("Today medicine", response.json()["message"])
+        self.assertNotIn("Yesterday medicine", response.json()["message"])
+
+    def test_dashboard_excludes_future_local_days_and_keeps_today_count(self):
+        zone = ZoneInfo("Pacific/Kiritimati")
+        now = utcnow()
+        today = now.astimezone(zone).date()
+        day_start = datetime.combine(today, datetime_time.min, zone).astimezone(timezone.utc)
+        due_times = (
+            ("Yesterday medicine", stamp(day_start - timedelta(seconds=1))),
+            ("Today medicine", stamp(day_start + timedelta(hours=2))),
+            ("Tomorrow medicine", stamp(day_start + timedelta(days=1, hours=2))),
+        )
+        with transaction() as db:
+            db.execute("UPDATE profiles SET timezone=? WHERE id=?", (str(zone), self.profile))
+            for name, due_at in due_times:
+                medication_id = db.execute(
+                    "INSERT INTO medications(profile_id,name,dose,instructions,times,start_date,active,effective_at) "
+                    "VALUES(?,?,?,?,?,?,0,?)",
+                    (self.profile, name, "one", "", "[]", str(today), stamp(now)),
+                ).lastrowid
+                db.execute(
+                    "INSERT INTO doses(profile_id,medication_id,revision,name,dose,instructions,due_at) "
+                    "VALUES(?,?,1,?,?,?,?)",
+                    (self.profile, medication_id, name, "one", "", due_at),
+                )
+
+        response = self.client.get(self.path + "/dashboard", headers=self.owner)
+
+        self.assertEqual(response.status_code, 200, response.text)
+        result = response.json()
+        self.assertEqual([dose["name"] for dose in result["doses"]], ["Yesterday medicine", "Today medicine"])
+        self.assertEqual(result["today_count"], 1)
 
     def test_voice_cancel_and_stale_confirmation(self):
         dose = self.dose(0)
